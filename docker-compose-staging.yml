@@ -1,0 +1,103 @@
+version: '3.9'
+
+networks:
+  monitoring:
+    driver: bridge
+
+services:
+  prometheus:
+    user: root
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - /home/ubuntu/pwskills-overwatch/volumes/prometheus/config:/config
+      - /home/ubuntu/pwskills-overwatch/volumes/prometheus/data/prometheus:/prometheus/data
+    command:
+      - '--config.file=/config/prometheus.yml'
+      - '--web.enable-lifecycle'
+      - '--web.config.file=/config/web.yml'
+    ports:
+      - 9090:9090
+    networks:
+      - monitoring
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "2048m"
+
+  grafana:
+    image: grafana/grafana-enterprise:latest
+    container_name: grafana
+    restart: unless-stopped
+    user: '104'
+    ports:
+      - 3000:3000
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    networks:
+      - monitoring
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "2048m"
+
+  node_exporter:
+    image: quay.io/prometheus/node-exporter:latest
+    container_name: node_exporter
+    command:
+      - '--path.rootfs=/host'
+    network_mode: host
+    pid: host
+    restart: unless-stopped
+    volumes:
+      - '/:/host:ro,rslave'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "2048m"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    restart: unless-stopped
+    pid: host
+    ports:
+      - 8069:8080
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+    privileged: true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "2048m"
+
+  nginx_proxy:
+    container_name: nginx_proxy
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile-staging.nginx
+    image: nginx_proxy:v1
+    ports:
+      - 80:80
+    networks:
+      - monitoring
+    deploy:
+      placement:
+        constraints: [ node.role == manager ]
+    depends_on:
+      - grafana
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "2048m"
+volumes:
+  grafana-storage:
+    external: true
